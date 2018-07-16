@@ -12,6 +12,7 @@ log.txt
 !.gitignore
 !*.py
 !*.json
+!./json
 
 
 # exception to the rule
