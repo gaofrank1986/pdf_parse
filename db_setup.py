@@ -38,6 +38,8 @@ class Info(Base):
         self.finance_leverage = 0.0
         self.total_asset_incr = 0.0
         self.op_cash_over_net_profit = 0.0
+        self.smr_net_profit_incr = 0.0
+        self.smr_avg_roe = 0.0
 
 class Concise_Table(Base):
     __table__ = Base.metadata.tables['Concise_Finance_Data']
