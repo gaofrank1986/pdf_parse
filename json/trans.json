@@ -17,5 +17,7 @@
     "总周转率": "total_turn_over",
     "财务杠杆": "finance_leverage",
     "总资产增长率": "total_asset_incr",
-    "经营性现金率/净利润": "op_cash_over_net_profit"
+    "经营性现金率/净利润": "op_cash_over_net_profit",
+    "报表扣非净利润增长": "smr_net_profit_incr",
+    "报表净资产收益率": "smr_avg_roe"
 }
