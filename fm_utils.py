@@ -20,24 +20,7 @@ class FmUtils(object):
         pos =[[],[],[]]
         df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
         self._summary = df
-        #  for j in range(2):
-            #  for i in range(len(df)):
-                #  tmp = list(df[i].fillna('').loc[:,0])
-                #  tmp = [(indic[j] in x) for x in tmp]
-                #  if(any(tmp)):
-                    #  pos[j].append(i)
-        #  self._spos = pos
 
-        #合并需要的表格，并重新给index赋值
-#          if not(pos[0])and(not(pos[1])):
-            #  raise Exception("Cannot locate row in summary")
-        #  else:
-            #  if (pos[0]):
-                #  start = pos[0][0]
-            #  else:
-                #  start = pos[1][0]
-        #  end   = pos[2][0]+1
-        #  ww = pd.concat(df[start:end])
         ww = pd.concat(df[:])
         ww.index = range(0,ww.shape[0])
         self._buf = ww
@@ -80,9 +63,23 @@ class FmUtils(object):
         res = [ x for x in res if len(x) > 2 ]
         # 结果转存在有序dict里面
         #  e,tmp = self._formatted_list_to_ordered_dic(res)
-        e = res
-        return(e)
-    
+        mark =[]
+        for i in range(len(res)):
+            if '营业收入' in res[i]:
+                mark.append(i)
+        if len(mark) > 1:
+            e = res[:mark[1]]
+        else:
+            e = res
+
+        self._buf4 = e
+        ans = OrderedDict()
+        for d in e:
+            d = d.split()
+            ans[d[0]] = (self._comma_sep_string_to_num(d[1]),self._comma_sep_string_to_num(d[2]))
+
+        return(ans)
+
     def _is_a_stop(self,s):
         # 包括当前字节
         flagline = list(s.isnull())
@@ -388,11 +385,14 @@ class FmUtils(object):
             sign = -1
             ss = ss.replace('-','')
         if ss.count('.') > 1:
+            #  raise Exception(ss,'not valid format')
             print(ss)
-            raise Exception(ss,'not valid format')
-        if not(str.isalnum(ss.replace('.',''))):
+            ss = '999999999'
+        tmp = ss.replace('.','')
+        if not(tmp.isdigit()):
             print(ss)
-            raise Exception(ss,'string contain non number component')
+            ss = '999999999'
+            #  raise Exception(ss,'string contain non number component')
 
         return(sign*float(ss))
 
@@ -501,12 +501,15 @@ class FmUtils(object):
         result['total_asset_incr'] = this['total_asset']/last['total_asset'] - 1
         #  result['经营性现金率/净利润'] =e['经营活动产生的现金流量净额'][0]/ e['净利润'][0]
         result['op_cash_over_net_profit'] = this['net_cash_from_op']/this['net_profit']
+        result['smr_net_profit_incr'] = this['smr_deducted_net_profit']/last['smr_deducted_net_profit'] - 1
+        result['smr_avg_roe'] = this['smr_avg_roe']
 
         for i in result.keys():
             result[i] = round(result[i]*100,prec)
         result['net_working_cap'] = round(result['net_working_cap']/10**8/100,prec)
         result['finance_leverage'] = round(result['finance_leverage']/100,prec)
         result['total_turn_over'] = round(result['total_turn_over']/100,prec)
+        result['smr_avg_roe'] = round(result['smr_avg_roe']/100,prec)
 
         return(result)
 
