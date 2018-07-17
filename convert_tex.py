@@ -5,10 +5,10 @@ from sqlalchemy import exists,desc
 
 def get_common_row(stock_id,col_name,color=False,trailing=""):
     a = FmUtils()
-    trans = a.load_from_json("./trans.json")
+    trans = a.load_from_json("./json/trans.json")
     trans = a.swap_dict(trans)
     if col_name != "date":
-        decor = a.load_from_json("./decor.json")
+        decor = a.load_from_json("./json/decor.json")
         decor = decor[trans[col_name]]
     else:
         decor =[False,"",False]
@@ -28,16 +28,20 @@ def get_common_row(stock_id,col_name,color=False,trailing=""):
     line+="\\\\"
     if decor[0]:
         line="\\rowcolor[gray]{0.9}"+line
-    if decor[2]:
+    if decor[2] == 'dot':
         line=line+"\\hdashline"
+    if decor[2] == 'solid':
+        line=line+"\midrule"
     return(line)
 
-def write_tex(path,stock_id):
+def write_tex(path,stock_id,flag_rotate = 0):
     a = FmUtils()
-    trans = a.load_from_json("./trans.json")
+    trans = a.load_from_json("./json/trans.json")
     num_rec = db_info.query(Info).filter(Info.stock_id==stock_id).count()
+    stock_name = db_info.query(Info.stock_name).filter(Info.stock_id==stock_id).all()[0][0]
     row_one = get_common_row(stock_id,"date")
     row_two=""
+    tab_title = str(stock_id+" "+stock_name+" 基本信息")
     for i in range(1,num_rec+1):
         row_two = row_two+"\cmidrule(l){"+str(i+1)+"-"+str(i+1)+"}"
 
@@ -47,6 +51,7 @@ def write_tex(path,stock_id):
         f.write("\\usepackage{colortbl}\n")
         f.write("\\usepackage{tabu}\n")
         f.write("\\usepackage{xeCJK}\n")
+        f.write("\\usepackage{adjustbox}\n")
         f.write("\\usepackage{fontspec} \n")
         f.write("\\setCJKmainfont[Scale=0.8]{SimSun} \n")
         f.write("\\setCJKmonofont{SimSun}\n")
@@ -64,7 +69,9 @@ def write_tex(path,stock_id):
         f.write("\\begin{document}\n")
         f.write("\\begin{table}[!htbp]\n")
         f.write("\\centering\n")
-        f.write("\\caption{Basic Info}\\label{tab:aStrangeTable}\n")
+        f.write("\\caption{"+tab_title+"}\\label{tab:aStrangeTable}\n")
+        if(flag_rotate):
+            f.write("\\begin{adjustbox}{angle=90}\n")
         seg = "l"+"r"*(num_rec)
         f.write("\\begin{tabular}{"+seg+"}\n")
         f.write("\\toprule\n")
@@ -75,8 +82,10 @@ def write_tex(path,stock_id):
 
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
+        if(flag_rotate):
+            f.write("\\end{adjustbox}\n")
         f.write("\\end{table}\n")
         f.write("\\end{document}\n")
 
 
-write_tex("./test.tex",2367)
+write_tex("./test.tex","002372",flag_rotate = 1)
