@@ -7,6 +7,7 @@ from math import isnan
 from collections import OrderedDict
 import pandas as pd
 import re
+from sqlalchemy import exists,and_,or_
 
 
 class FmUtils(object):
@@ -591,3 +592,23 @@ class FmUtils(object):
         e,tmp = self._formatted_list_to_ordered_dic(new_out)
 
         return(e)
+
+
+    def save_to_database(self,db_session,db,stock_id,year,d):
+        keys = [str(stock_id)+'_'+str(year), str(stock_id)+'_'+str(int(year)-1)]
+        name = self.load_from_json("./json/table_trans.json")
+        for a_key in keys:
+            (res,) =db_session.query(exists().where(db.fm_id==a_key))
+            if not(res[0]):
+                db_session.add(db(stock_id = stock_id,date = a_key[-4:]))
+                db_session.commit()
+
+        for i in d.keys():
+            tmp = name.get(i,-99)
+            if tmp!="0" and tmp!=-99:
+                db_session.query(db).filter(db.fm_id == keys[0]).update({name[i]: d[i][0]})
+                db_session.query(db).filter(db.fm_id == keys[1]).update({name[i]: d[i][1]})
+            elif tmp==-99:
+                print(i)
+
+        db_session.commit()
