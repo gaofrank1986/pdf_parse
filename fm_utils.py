@@ -168,8 +168,29 @@ class FmUtils(object):
                 break
         return ans
 
+    def _preprocess_df(self,df):
+        w = list(df.iloc[:,0])
+        res =[]
+        for i in range(len(w)):
+            if '购建固定资产' in w[i] or '处置固定资产' in w[i]:
+                res.append(i)
+        print(res)
+        for i in res:
+            for kk in range(1,3):
+                if w[i].endswith('金') or w[i].endswith('净额'):
+                    break
+                df.loc[i+kk,0] = w[i+kk].replace(' ','')
+                df.loc[i,:] += df.loc[i+kk,:]
+                if w[i+kk].endswith('金') or w[i].endswith('净额'):
+                    break
+
 
     def read_and_clean(self, path, pages="",check_multi = True, mode = 1):
+        # mode 0 ,忽略 multi_check
+        # mode 1 ,正常
+        # mode 2 , process_line 去除 [0] 和 最后两个数字之间的部分
+        # mode 3 ,处理 2017数据合并,母公司，2016数据合并,数据母公司
+        # mode 4 ,输出选择的d
 
         if not(pages):
             pages = "all"
@@ -184,6 +205,7 @@ class FmUtils(object):
 
         df  =pd.concat(df[:]).fillna(' ')
         df.index = range(0,df.shape[0])
+        self._preprocess_df(df)
 
         self._buf = df
         # 清理数据
@@ -211,7 +233,7 @@ class FmUtils(object):
         new_output = []
         pos = self.mark_multi_table(new_out)
         self._buf3 = pos.copy()
-        if check_multi:
+        if check_multi and mode!=0:
             flag = (len(pos['t1'])==0) or (len(pos['t2'])==0) or (len(pos['t3'])==0)
             if flag:
                 raise Exception("table missing")
@@ -287,10 +309,6 @@ class FmUtils(object):
                 for kk in range(len(flagline[:-2])-1):
                     # newline在删element过程中会变化，所以用len(flagline)
                     newline.remove(newline[len(flag[:-2])-1-kk])
-            #  elif (mode == 3):
-                #  newline = [newline[0],newline[1],newline[5]]
-
-                #  newline.remove(newline[1])
             return(' '.join(newline))
 
 
@@ -303,6 +321,10 @@ class FmUtils(object):
                 tmp[0] = '经营活动产生的现金流量净额'
             if tmp[0] in ['股东权益合计','所有者权益合计']:
                 tmp[0] = '所有者权益'
+            if  '购建固定资产' in tmp[0] :
+                tmp[0] = '构建固定资产等所支付现金'
+            if  '处置固定资产' in tmp[0] :
+                tmp[0] = '处置固定资产等所收回现金净额'
             output[i]  = ' '.join(tmp)
         return(output)
 
@@ -380,6 +402,9 @@ class FmUtils(object):
         # 1. 带有alist的
         # 2. 对于非数字包含blist
         # 3. 带有括号和括号内的
+        if '注' in s:
+        #  if '附注' in s:
+            return ''
         flag = True
 
         alist =['一、','二、','三、','四、','五、','六、','七、','八、','九、']
@@ -420,6 +445,8 @@ class FmUtils(object):
             if tmp!=-1:
                 if len(s)<3:
                     s=''
+            #  if '注' in s:
+                #  ss =  ''
         return(s)
 
     def _comma_sep_string_to_num(self,s):
@@ -537,10 +564,12 @@ class FmUtils(object):
                 +this['inventory']-this['note_pyb']-this['acc_pyb']-this['pre_rcv']
         #  result['固定资产占总资产比重'] = (e['固定资产'][0])/e['资产总计'][0]
         result['fixed_asset_ratio'] = this['fixed_asset']/this['total_asset']
-        #  result['现金资产占总资产比重'] = (e['货币资金'][0])/e['资产总计'][0]
-        result['cash_eq_over_total_asset'] = this['cash_and_eq']/this['total_asset']
+        #new
+        result['fixed_asset_incr'] = this['fixed_asset']/last['fixed_asset'] - 1
         #  result['在建工程占固定资产比重'] = (e['在建工程'][0])/e['固定资产'][0]
         result['on_building_over_fixed'] = this['on_building']/this['fixed_asset']
+        #  result['现金资产占总资产比重'] = (e['货币资金'][0])/e['资产总计'][0]
+        result['cash_eq_over_total_asset'] = this['cash_and_eq']/this['total_asset']
         #  result['净资产收益率'] = e['净利润'][0]/((e['所有者权益'][0]+e['所有者权益'][1])/2)
         result['ROE'] = this['net_profit']/(0.5*this['equity']+0.5*last['equity'])
         #  result['净利润率'] =  e['净利润'][0]/e['营业收入'][0]
@@ -551,8 +580,12 @@ class FmUtils(object):
         result['finance_leverage'] = this['total_asset']/(this['total_asset']-this['total_debt'])
         #  result['总资产增长率'] = e['资产总计'][0]/e['资产总计'][1] - 1
         result['total_asset_incr'] = this['total_asset']/last['total_asset'] - 1
+        # new
+        result['equity_incr'] = this['equity']/last['equity'] - 1
         #  result['经营性现金率/净利润'] =e['经营活动产生的现金流量净额'][0]/ e['净利润'][0]
         result['op_cash_over_net_profit'] = this['net_cash_from_op']/this['net_profit']
+        result['capex_over_net_profit'] = (this['capital_expenditure']\
+                /this['net_profit']
         result['smr_net_profit_incr'] = this['smr_deducted_net_profit']/last['smr_deducted_net_profit'] - 1
         result['smr_avg_roe'] = this['smr_avg_roe']
 
