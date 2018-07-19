@@ -76,6 +76,7 @@ class Concise_Table(Base):
 
     cash_inflow_from_op = Column(Numeric(),default = 0.0)
     net_cash_from_op = Column(Numeric(),default = 0.0)
+    capital_expenditure = column(numeric(),default = 0.0)
 
     smr_deducted_net_profit = Column(Numeric(),default =0.0)
     smr_avg_roe = Column(Numeric(),default =0.0)

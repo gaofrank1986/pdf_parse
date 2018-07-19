@@ -31,13 +31,16 @@ class Info(Base):
         self.net_working_cap = 0.0
         self.cash_eq_over_total_asset = 0.0
         self.fixed_asset_ratio = 0.0
+        self.fixed_asset_incr = 0.0
         self.on_building_over_fixed = 0.0
         self.ROE = 0.0
         self.net_profit_margin = 0.0
         self.total_turn_over = 0.0
         self.finance_leverage = 0.0
         self.total_asset_incr = 0.0
+        self.equity_incr = 0.0
         self.op_cash_over_net_profit = 0.0
+        self.capex_over_net_profit = 0.0
         self.smr_net_profit_incr = 0.0
         self.smr_avg_roe = 0.0
 
@@ -84,6 +87,11 @@ class Concise_Table(Base):
 
         self.cash_inflow_from_op = 0.0
         self.net_cash_from_op = 0.0
-
+        self.capital_expenditure = 0.0
         self.smr_deducted_net_profit = 0.0
         self.smr_avg_roe = 0.0
+
+        self.common_stock = 0.0
+        self.year_end_stock_price = 0.0
+        self.per_share_gain = 0.0
+        self.diluted_per_share_gain = 0.0
