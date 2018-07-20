@@ -177,6 +177,8 @@ class FmUtils(object):
         print(res)
         for i in res:
             for kk in range(1,3):
+                if(i+kk>len(w)-1):
+                    break
                 if w[i].endswith('金') or w[i].endswith('净额'):
                     break
                 df.loc[i+kk,0] = w[i+kk].replace(' ','')
@@ -348,6 +350,7 @@ class FmUtils(object):
 
     def _is_str_valid(self,s):
         '''check if this string is a valid number'''
+        # 对于括号中的数字
         if not(isinstance(s,str)):
             s = str(s)
         ss = s.replace(',','')
@@ -390,7 +393,8 @@ class FmUtils(object):
                 count_d[tmp[0]] +=1
         flag = [x > 2 for x in count_d.values()]
         if any(flag):
-            raise Exception("Too many duplicates")
+            #  raise Exception("Too many duplicates")
+            pass
 
         return (e,count_d)
 
@@ -402,9 +406,17 @@ class FmUtils(object):
         # 1. 带有alist的
         # 2. 对于非数字包含blist
         # 3. 带有括号和括号内的
+        s = s.replace(',','')
+        s =  re.sub(r'^\((\d+)\)$', r'\1', s)
         if '注' in s:
         #  if '附注' in s:
             return ''
+
+        if '增加' in s:
+        #  if '附注' in s:
+            return ''
+
+    
         flag = True
 
         alist =['一、','二、','三、','四、','五、','六、','七、','八、','九、']
@@ -539,53 +551,33 @@ class FmUtils(object):
         # ----------------------------------------------
         result = OrderedDict()
         prec = 2
-        #  result['营收增幅'] = e['营业收入'][0]/e['营业收入'][1] -1
         # total revenue
         result['revenue_incr'] = this['revenue']/last['revenue'] - 1
-        #  result['毛利率'] = 1 - e['营业成本'][0]/e['营业收入'][0]
         result['gross_margin'] = 1 - this['op_cost']/this['revenue']
-        #  result['三项费用率'] = (e['管理费用'][0]+e['销售费用'][0]+e['财务费用'][0])/e['营业收入'][0]
         result['total_expense_rate'] = (this['admin_expense']+this['sale_expense']+\
                 this['finance_expense'])/this['revenue']
-        #  result['销售费用率'] = e['销售费用'][0]/e['营业收入'][0]
         result['sale_expense_rate'] = this['sale_expense']/this['revenue']
-        #  result['管理费用率'] = e['管理费用'][0]/e['营业收入'][0/this['revenue']]
         result['admin_expense_rate'] = this['admin_expense']/this['revenue']
-        #  result['财务费用率'] = e['财务费用'][0]/e['营业收入'][0]
         result['finance_expense_rate'] = this['finance_expense']/this['revenue']
-        #  result['扣非净利润增幅'] = e['营业利润'][0]/e['营业利润'][1] - 1
         result['reduced_net_profit_incr'] = this['op_profit']/last['op_profit'] - 1
-        #  result['资产负债率'] = e['负债合计'][0]/e['资产总计'][0]
         result['asset_debt_ratio'] = this['total_debt']/this['total_asset']
-        #  result['应收账款占收入'] = (e['应收账款'][0]+e['应收票据'][0])/e['营业收入'][0]
         result['acc_rcv_over_revenue'] = (this['acc_rcv']+this['note_rcv'])/this['revenue']
-        #  result['净营运资本'] = (e['流动资产合计'][0]-e['流动负债合计'][0])/10**8
         result['net_working_cap'] = this['note_rcv']+ this['acc_rcv']+this['pre_paid']+this['other_rcv']\
                 +this['inventory']-this['note_pyb']-this['acc_pyb']-this['pre_rcv']
-        #  result['固定资产占总资产比重'] = (e['固定资产'][0])/e['资产总计'][0]
         result['fixed_asset_ratio'] = this['fixed_asset']/this['total_asset']
         #new
         result['fixed_asset_incr'] = this['fixed_asset']/last['fixed_asset'] - 1
-        #  result['在建工程占固定资产比重'] = (e['在建工程'][0])/e['固定资产'][0]
         result['on_building_over_fixed'] = this['on_building']/this['fixed_asset']
-        #  result['现金资产占总资产比重'] = (e['货币资金'][0])/e['资产总计'][0]
         result['cash_eq_over_total_asset'] = this['cash_and_eq']/this['total_asset']
-        #  result['净资产收益率'] = e['净利润'][0]/((e['所有者权益'][0]+e['所有者权益'][1])/2)
         result['ROE'] = this['net_profit']/(0.5*this['equity']+0.5*last['equity'])
-        #  result['净利润率'] =  e['净利润'][0]/e['营业收入'][0]
         result['net_profit_margin'] = this['net_profit']/this['revenue']
-        #  result['总周转率'] =  e['营业收入'][0]/((e['资产总计'][0]+e['资产总计'][1])/2)
         result['total_turn_over'] = this['revenue']/(0.5*this['total_asset']+0.5*last['total_asset'])
-        #  result['财务杠杆'] =  e['资产总计'][0]/(e['资产总计'][0] -  e['负债合计'][0])
         result['finance_leverage'] = this['total_asset']/(this['total_asset']-this['total_debt'])
-        #  result['总资产增长率'] = e['资产总计'][0]/e['资产总计'][1] - 1
         result['total_asset_incr'] = this['total_asset']/last['total_asset'] - 1
         # new
         result['equity_incr'] = this['equity']/last['equity'] - 1
-        #  result['经营性现金率/净利润'] =e['经营活动产生的现金流量净额'][0]/ e['净利润'][0]
         result['op_cash_over_net_profit'] = this['net_cash_from_op']/this['net_profit']
-        result['capex_over_net_profit'] = (this['capital_expenditure']\
-                /this['net_profit']
+        result['capex_over_net_profit'] = this['capital_expenditure']/this['net_profit']
         result['smr_net_profit_incr'] = this['smr_deducted_net_profit']/last['smr_deducted_net_profit'] - 1
         result['smr_avg_roe'] = this['smr_avg_roe']
 
