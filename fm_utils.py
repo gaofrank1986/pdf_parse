@@ -1,13 +1,13 @@
-import PyPDF2
+#  import PyPDF2
 from tabula import read_pdf
 import json
 import os
 import logging
-from math import isnan
 from collections import OrderedDict
 import pandas as pd
 import re
 from sqlalchemy import exists,and_,or_
+from openpyxl import Workbook
 
 
 class FmUtils(object):
@@ -168,6 +168,10 @@ class FmUtils(object):
                 break
         return ans
 
+    #------------------------------------------------------------ 
+    #--------------------- read and clean part------------------
+    #------------------------------------------------------------ 
+
     def _preprocess_df(self,df):
         w = list(df.iloc[:,0])
         res =[]
@@ -186,13 +190,38 @@ class FmUtils(object):
                 if w[i+kk].endswith('金') or w[i].endswith('净额'):
                     break
 
+    def _preprocess_df_v2(self,df):
+        w = list(df.iloc[:,0])
+        v = list(df.iloc[0,:])
+        for i in range(len(w)):
+            flag = [self._is_str_valid(df.iloc[i,-2]),self._is_str_valid(df.iloc[i,-1])]
+            if (flag[0] and df.iloc[i,-1] ==' '):
+                df.iloc[i,-1] ='00000.00'
+            elif(flag[1] and df.iloc[i,-2] == ' '):
+                df.iloc[i,-2] ='00000.00'
+
+        for i in range(len(w)):
+            if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
+                for kk in range(1,3):
+                    # 超出表格·
+                    if(i+kk>len(w)-1):
+                        break
+                    df.loc[i+kk,0] = w[i+kk].replace(' ','')
+                    df.loc[i,:] += df.loc[i+kk,:]
+                    for j in range(len(v)):
+                        df.iloc[i+kk,j] = ''
+                    if w[i+kk].endswith(')') :
+                        break
+        #括号跨越
+        #数字/空白
+        #空白/数字
+
 
     def read_and_clean(self, path, pages="",check_multi = True, mode = 1):
         # mode 0 ,忽略 multi_check
         # mode 1 ,正常
         # mode 2 , process_line 去除 [0] 和 最后两个数字之间的部分
         # mode 3 ,处理 2017数据合并,母公司，2016数据合并,数据母公司
-        # mode 4 ,输出选择的d
 
         if not(pages):
             pages = "all"
@@ -206,10 +235,13 @@ class FmUtils(object):
                 #  raise Exception(path,ncol,"parallel table")
 
         df  =pd.concat(df[:]).fillna(' ')
+        #  df  =pd.concat(df[:]).fillna('blank')
         df.index = range(0,df.shape[0])
+        self._oldest = df.copy()
+        self._preprocess_df_v2(df)
         self._preprocess_df(df)
 
-        self._buf = df
+        self._buf = df.copy()
         # 清理数据
         res = self._clean_df(df,mode)
         # 标准化index
@@ -223,7 +255,7 @@ class FmUtils(object):
                     new_out.append(' '.join([i[0],i[1],i[3]]))
         else:
             new_out = res
-        self._buf2 = new_out
+        self._buf2 = new_out.copy()
 
 
         # 处理子母表
@@ -284,7 +316,7 @@ class FmUtils(object):
         # 3. a. 如果数字出现少于2个，就去掉（需要针对two col进行修改）
         #    b. 如果最后一个comp是文字，就去掉
         #    c. 如果前两个都是文字，去掉第一个
-        x = [self._format_index(i) for i in res.split()]
+        x = [self._format_cell(i) for i in res.split()]
 
         blist = [str(i) for i in range(10,100)]
 
@@ -348,16 +380,28 @@ class FmUtils(object):
                 pos['t3'].append(i)
         return(pos)
 
+    #  def _is_str_valid_v2(self,s):
+        #  '''check if this string is a valid number'''
+        #  # 对于括号中的数字
+        #  if not(isinstance(s,str)):
+            #  s = str(s)
+        #  ss = s.replace(',','')
+        #  ss = ss.replace('.','')
+        #  ss = ss.replace('-','')
+        #  ss = ss.replace('%','')
+        #  return(bytes.isalnum(ss.encode()))
+
     def _is_str_valid(self,s):
-        '''check if this string is a valid number'''
-        # 对于括号中的数字
         if not(isinstance(s,str)):
             s = str(s)
-        ss = s.replace(',','')
-        ss = ss.replace('.','')
-        ss = ss.replace('-','')
-        ss = ss.replace('%','')
-        return(bytes.isalnum(ss.encode()))
+        # 去括号
+        s =  re.sub(r'^\(([0-9,-.]+)\)$', r'\1', s)
+        # 去百分号
+        s = s.replace('%','')
+        if(re.match(r'^[-]?\d[0-9,]*[^,][.]?\d*$',s)):
+            return True
+        else:
+            return False
 
     # 清理表格
     #    a.合并dataframe
@@ -398,68 +442,96 @@ class FmUtils(object):
 
         return (e,count_d)
 
-
-    def _format_index(self,s):
+    def _format_cell(self,s):
         assert(len(s.split())<2)
-        #normalize 单个string格式
-        # 去掉
-        # 1. 带有alist的
-        # 2. 对于非数字包含blist
-        # 3. 带有括号和括号内的
-        s = s.replace(',','')
-        s =  re.sub(r'^\((\d+)\)$', r'\1', s)
-        if '注' in s:
-        #  if '附注' in s:
-            return ''
-
-        if '增加' in s:
-        #  if '附注' in s:
-            return ''
-
-    
-        flag = True
-
-        alist =['一、','二、','三、','四、','五、','六、','七、','八、','九、']
-        for i in alist:
-            if i in s:
-                s = s.split(i)[1]
-        alist =['一.','二.','三.','四.','五.','六.','七.']
-        for i in alist:
-            if i in s:
-                s = s.split(i)[1]
-
-        if(self._is_str_valid(s)):
-            blist=[]
-            if len(s)<3:
-                s=''
-                flag = False
-        else:
-            s = s.replace('-','')
-            blist = [str(i)+'.' for i in range(0,20)]
-            #remove 1. , 2. ,...........
-            #如果非数字string长度小于2，删除
-            if len(s)<2:
-                s=''
-                flag = False
-        if flag:
+        # 去除数字周围的括号
+        s = re.sub(r'^\(([0-9-,.]+)\)$', r'\1', s)
+        # 去掉汉字数字+[.] or [、]
+        s = re.sub(r'[一二三四五六七八九十]+[、.]','',s)
+        # [\u4E00-\u9FA5] 去掉类似(一) (二)
+        s = re.sub(r'\([\u4E00-\u9FA5]{1,2}[、.]?\)','',s)
+        if not(self._is_str_valid(s)):
+            #  s = s.replace('-','')
+            if s=='-':
+                s = '00000'
+            # 如果不是数字项,去掉1.,2.,...........
+            s = re.sub(r'[0-9]{1,2}[.]','',s)
+            # 去掉括号及其中内容
+            s = re.sub(r'\(.+\)','',s)
+            s = re.sub(r'\).*','',s)
+            s = re.sub(r'\(.*','',s)
             clist = ['其中:','减:','加:']
-            for i in blist+clist:
+            for i in clist:
                 s = s.replace(i,'')
-            tmp = s.find('(')
-            if not(tmp==-1):
-                if tmp<3:
-                    tmp2 = s.split(')')
-                    if len(tmp2)>1:
-                        s = tmp2[1]
-                tmp2 = s.split('(')
-                s = tmp2[0]
-            tmp = s.find(')')
-            if tmp!=-1:
-                if len(s)<3:
-                    s=''
-            #  if '注' in s:
-                #  ss =  ''
+        if '注' in s:
+            s = ''
+        if '增加' in s:
+            s = ''
+
         return(s)
+
+
+    #  def _format_index(self,s):
+        #  assert(len(s.split())<2)
+        #  #normalize 单个string格式
+        #  # 去掉
+        #  # 1. 带有alist的
+        #  # 2. 对于非数字包含blist
+        #  # 3. 带有括号和括号内的
+        #  s =  re.sub(r'\(([0-9,.]+)\)', r'\1', s)
+        #  if '注' in s:
+        #  #  if '附注' in s:
+            #  return ''
+
+        #  if '增加' in s:
+        #  #  if '附注' in s:
+            #  return ''
+
+        #  #r'[一二三四五六七八九十]+[、.]'
+
+        #  flag = True
+
+        #  alist =['一、','二、','三、','四、','五、','六、','七、','八、','九、']
+        #  for i in alist:
+            #  if i in s:
+                #  s = s.split(i)[1]
+        #  alist =['一.','二.','三.','四.','五.','六.','七.']
+        #  for i in alist:
+            #  if i in s:
+                #  s = s.split(i)[1]
+
+        #  if(self._is_str_valid(s)):
+            #  blist=[]
+            #  if len(s)<3:
+                #  s=''
+                #  flag = False
+        #  else:
+            #  s = s.replace('-','')
+            #  blist = [str(i)+'.' for i in range(0,20)]
+            #  #remove 1. , 2. ,...........
+            #  #如果非数字string长度小于2，删除
+            #  if len(s)<2:
+                #  s=''
+                #  flag = False
+        #  if flag:
+            #  clist = ['其中:','减:','加:']
+            #  for i in blist+clist:
+                #  s = s.replace(i,'')
+            #  tmp = s.find('(')
+            #  if not(tmp==-1):
+                #  if tmp<3:
+                    #  tmp2 = s.split(')')
+                    #  if len(tmp2)>1:
+                        #  s = tmp2[1]
+                #  tmp2 = s.split('(')
+                #  s = tmp2[0]
+            #  tmp = s.find(')')
+            #  if tmp!=-1:
+                #  if len(s)<3:
+                    #  s=''
+            #  #  if '注' in s:
+                #  #  ss =  ''
+        #  return(s)
 
     def _comma_sep_string_to_num(self,s):
         ##将逗号分隔的数字转成数字
@@ -478,11 +550,11 @@ class FmUtils(object):
         if ss.count('.') > 1:
             #  raise Exception(ss,'not valid format')
             print(ss)
-            ss = '999999999'
+            ss = '9999999999999999999'
         tmp = ss.replace('.','')
         if not(tmp.isdigit()):
             print(ss)
-            ss = '999999999'
+            ss = '9999999999999999999'
             #  raise Exception(ss,'string contain non number component')
 
         return(sign*float(ss))
@@ -590,84 +662,95 @@ class FmUtils(object):
 
         return(result)
 
-    def read_and_clean_v2(self, path, pages="",check_multi = True):
-        # 读取pdf表格，并清理
-        #  parallel_tab_flag = False
-        #  pdfFileObj = open(path,'rb')
-        #  pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
-        if not(pages):
-            pages = "all"
-        df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
-        self._buf = df
-        output=[]
+    #  def read_and_clean_v2(self, path, pages="",check_multi = True):
+        #  # 读取pdf表格，并清理
+        #  #  parallel_tab_flag = False
+        #  #  pdfFileObj = open(path,'rb')
+        #  #  pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
+        #  if not(pages):
+            #  pages = "all"
+        #  df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
+        #  self._buf = df
+        #  output=[]
 
-        # read_pdf 返回list,对应每个表格
-        # 1. 如果col数目大于5，认为表格是双排
-        # 2. 对于 n/a 填充空格
-        # 3. 合并每行的内容
-        # 4. 清理数据
-        #    a. 如果每行 少于两个 comp 则丢弃
-        #       对于双排表格进行处理
-        #    b. process_line 清理
-        for k in range(len(df)):
-            ncol = df[k].shape[1]
-            if  ncol > 5:
-                parallel_tab_flag = True
-            df[k] = df[k].fillna(' ')
-            #dataframe 变成 list
-            for i in range(ncol):
-                if i == 0:
-                    tmp = df[k].loc[:,i]
-                else:
-                    tmp = tmp+' '+df[k].loc[:,i]
-            res = list(tmp)
+        #  # read_pdf 返回list,对应每个表格
+        #  # 1. 如果col数目大于5，认为表格是双排
+        #  # 2. 对于 n/a 填充空格
+        #  # 3. 合并每行的内容
+        #  # 4. 清理数据
+        #  #    a. 如果每行 少于两个 comp 则丢弃
+        #  #       对于双排表格进行处理
+        #  #    b. process_line 清理
+        #  for k in range(len(df)):
+            #  ncol = df[k].shape[1]
+            #  if  ncol > 5:
+                #  parallel_tab_flag = True
+            #  df[k] = df[k].fillna(' ')
+            #  #dataframe 变成 list
+            #  for i in range(ncol):
+                #  if i == 0:
+                    #  tmp = df[k].loc[:,i]
+                #  else:
+                    #  tmp = tmp+' '+df[k].loc[:,i]
+            #  res = list(tmp)
 
-            res = [ x for x in res if len(x.split())>2] 
-            res = [ self.process_line(x) for x in res ]
-            res = [ x for x in res if len(x) > 2 ]
-            output.append(res)
+            #  res = [ x for x in res if len(x.split())>2]
+            #  res = [ self.process_line(x) for x in res ]
+            #  res = [ x for x in res if len(x) > 2 ]
+            #  output.append(res)
 
-        # combine list in result
-        new_out = []
-        for i in output:
-            new_out+=i
-        new_out = self.normalize_table(new_out)
-        self._buf2 = new_out
+        #  # combine list in result
+        #  new_out = []
+        #  for i in output:
+            #  new_out+=i
+        #  new_out = self.normalize_table(new_out)
+        #  self._buf2 = new_out
 
-        new_output = []
-        pos = self.mark_multi_table(new_out)
-        if check_multi:
-            flag = (len(pos['t1'])>1) or (len(pos['t2'])>1) or (len(pos['t3'])>1)
-            if flag:
-                new_output=[]
-                for i in range(1,4):
-                    m = pos['t'+str(i)]
-                    if len(m) > 1:
-                        start = m[0]
-                        if (m[1]-m[0])==1:
-                            if(len(m)>2):
-                                end = m[2]
-                            else:
-                                if(i<2):
-                                    end = pos['t'+str(i+1)][0]
-                                else:
-                                    end = len(new_out)-1
-                        else:
-                            end = m[1]
-                        for j in range(start,end):
-                            new_output.append(new_out[j])
-                    else:
-                        # 处理有的不带第二张表情况
-                        # deal with not all have child table
-                        pass
-            new_out = new_output 
-        self._buf3 = new_out
-        #--------------
-        # if not check multi table, the value is corrupted
-        # update 不记录第二次出现数据
-        e,tmp = self._formatted_list_to_ordered_dic(new_out)
+        #  new_output = []
+        #  pos = self.mark_multi_table(new_out)
+        #  if check_multi:
+            #  flag = (len(pos['t1'])>1) or (len(pos['t2'])>1) or (len(pos['t3'])>1)
+            #  if flag:
+                #  new_output=[]
+                #  for i in range(1,4):
+                    #  m = pos['t'+str(i)]
+                    #  if len(m) > 1:
+                        #  start = m[0]
+                        #  if (m[1]-m[0])==1:
+                            #  if(len(m)>2):
+                                #  end = m[2]
+                            #  else:
+                                #  if(i<2):
+                                    #  end = pos['t'+str(i+1)][0]
+                                #  else:
+                                    #  end = len(new_out)-1
+                        #  else:
+                            #  end = m[1]
+                        #  for j in range(start,end):
+                            #  new_output.append(new_out[j])
+                    #  else:
+                        #  # 处理有的不带第二张表情况
+                        #  # deal with not all have child table
+                        #  pass
+            #  new_out = new_output
+        #  self._buf3 = new_out
+        #  #--------------
+        #  # if not check multi table, the value is corrupted
+        #  # update 不记录第二次出现数据
+        #  e,tmp = self._formatted_list_to_ordered_dic(new_out)
 
-        return(e)
+        #  return(e)
+    def save_to_excel(self,path,d):
+        # '#,##0.00'
+        wb = Workbook()
+        ws = wb.active
+        for i in d:
+            ws.append([i,d[i][0],d[i][1]])
+        for i in ws['b']+ws['c']:
+            i.number_format = '#,##0.00'
+        for i in ['a','b','c']:
+            ws.column_dimensions[i].width = 40
+        ws.save(path)
 
 
     def save_to_database(self,db_session,db,stock_id,year,d):
