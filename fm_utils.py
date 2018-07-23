@@ -26,6 +26,8 @@ class FmUtils(object):
         ww = ww.fillna(' ')
         self._buf = ww.copy()
 
+
+        self._preprocess_df_step1(ww)
         self._smr_preprocess_df(ww)
         self._buf2 = ww.copy()
 
@@ -59,29 +61,16 @@ class FmUtils(object):
     def _smr_preprocess_df(self,df):
         # 第一列内容
         w = list(df.iloc[:,0])
-
-        for i in range(len(w)):
-            if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
-                for kk in range(1,3):
-                    # 超出表格·
-                    if(i+kk>len(w)-1):
-                        break
-                    df.loc[i+kk,0] = w[i+kk].replace(' ','')
-                    df.loc[i,:] += df.loc[i+kk,:]
-                    for j in range(len(v)):
-                        df.iloc[i+kk,j] = ''
-                    if w[i+kk].endswith(')') :
-                        break
-        
-        #-------------
+        # 第一行内容
+        v = list(df.iloc[0,:])
+        # 第一列去括号。。
         for i in range(len(w)):
             tmp = [self._format_cell(x) for x in w[i].split()]
             w[i] = ' '.join(tmp)
 
-        # 第一行内容
-        v = list(df.iloc[0,:])
         res =[]
         pool = [ '归属','扣除非' ]
+        pool2 = ['润','率','产','益']
         for i in range(len(w)):
             tmp = [x in w[i] for x in pool]
             if any(tmp):
@@ -90,7 +79,7 @@ class FmUtils(object):
             for kk in range(1,3):
                 if(i+kk>len(w)-1):
                     break
-                if w[i].endswith('润') or w[i].endswith('率') or w[i].endswith('产') or w[i].endswith('益'):
+                if any([w[i].endswith(x) for x in pool2]):
                     break
                 df.loc[i+kk,0] = w[i+kk].replace(' ','')
                 df.loc[i,:] += df.loc[i+kk,:]
@@ -103,29 +92,36 @@ class FmUtils(object):
     #--------------------- read and clean part------------------
     #------------------------------------------------------------ 
 
-    def _preprocess_df(self,df):
+    def _preprocess_df_step2(self,df):
         w = list(df.iloc[:,0])
         v = list(df.iloc[0,:])
         res =[]
         pool = [ '购建固定资产', '处置固定资产','销售商品、提','经营活动产生']
+        pool2 =['金','净额']
         for i in range(len(w)):
-            tmp = [x in w[i] for x in pool]
-            #  if '购建固定资产' in w[i] or '处置固定资产' in w[i] or '销售商品、提' in w[i]:
-            if any(tmp):
+            if any([x in w[i] for x in pool]):
                 res.append(i)
         for i in res:
             for kk in range(1,3):
                 if(i+kk>len(w)-1):
                     break
-                if w[i].endswith('金') or w[i].endswith('净额'):
+                if any([w[i].endswith(x) for x in pool2]):
+                #  if w[i].endswith('金') or w[i].endswith('净额'):
                     break
                 df.loc[i+kk,0] = w[i+kk].replace(' ','')
                 df.loc[i,:] += df.loc[i+kk,:]
-                #  for j in range(len(v)):
-                    #  df.iloc[i+kk,j] = ''
-                if w[i+kk].endswith('金') or w[i+kk].endswith('净额'):
+                # clear the line, if added to above line
+                for j in range(len(v)):
+                    df.iloc[i+kk,j] = ''
+                #  if w[i+kk].endswith('金') or w[i+kk].endswith('净额'):
+                if any([w[i+kk].endswith(x) for x in pool2]):
                     break
 
+
+
+    def _preprocess_df_step1(self,df):
+        #括号跨越
+        w = list(df.iloc[:,0])
         for i in range(len(w)):
             if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
                 for kk in range(1,3):
@@ -139,7 +135,9 @@ class FmUtils(object):
                     if w[i+kk].endswith(')') :
                         break
 
-    def _preprocess_df_v2(self,df):
+    def _preprocess_df_step3(self,df):
+        #数字/空白
+        #空白/数字
         w = list(df.iloc[:,0])
         v = list(df.iloc[0,:])
         for i in range(len(w)):
@@ -149,18 +147,14 @@ class FmUtils(object):
             elif(flag[1] and df.iloc[i,-2] == ' '):
                 df.iloc[i,-2] ='00000.00'
 
-        #括号跨越
-        #数字/空白
-        #空白/数字
-
 
     def read_and_clean(self, path, pages="",check_multi = True, mode = 1):
         # mode 0 ,忽略 multi_check
         # mode 1 ,正常
         # mode 2 , process_line 去除 [0] 和 最后两个数字之间的部分
-        # mode 3 ,处理 2017数据合并,母公司，2016数据合并,数据母公司
-        # mode 4, mode0+mode3
-        # mode 5, 忽略前处理2
+        # mode 3 ,处理 2017数据合并,母公司，2016数据合并,数据母公A(默认忽略前处理step3)
+        # mode 4, mode0+mode3(默认忽略前处理step3)
+        # mode 5, 忽略前处理step3
 
         if not(pages):
             pages = "all"
@@ -177,10 +171,12 @@ class FmUtils(object):
         #  df  =pd.concat(df[:]).fillna('blank')
         df.index = range(0,df.shape[0])
         self._oldest = df.copy()
-        if mode <3:
-            self._preprocess_df_v2(df)
-        self._preprocess_df(df)
 
+        #----------preprocessing--------------
+        self._preprocess_df_step1(df)
+        self._preprocess_df_step2(df)
+        if mode <3:
+            self._preprocess_df_step3(df)
         self._buf = df.copy()
         # 清理数据
         res = self._clean_df(df,mode)
