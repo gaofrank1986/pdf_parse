@@ -15,15 +15,14 @@ class FmUtils(object):
     def __init__(self):
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.disable(level=logging.INFO)
+        self.mode = 1
 
     def read_summary(self,path,pages):
-        indic =['营业收入','营业总收入','加权平均']
-        pos =[[],[],[]]
+
         df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
 
-        ww = pd.concat(df[:])
+        ww = pd.concat(df[:]).fillna(' ')
         ww.index = range(0,ww.shape[0])
-        ww = ww.fillna(' ')
         self._buf = ww.copy()
 
 
@@ -31,16 +30,10 @@ class FmUtils(object):
         self._smr_preprocess_df(ww)
         self._buf2 = ww.copy()
 
-
-        res = []
-        for i in range(ww.shape[0]):
-            out = ' '.join(list(ww.loc[i,:]))
-            res.append(out)
-        # 处理每行
+        res = self._clean_df(ww)
         self._buf3 = res
-        res = [ self.process_line(x) for x in res ]
-        res = [ x for x in res if len(x) > 2 ]
 
+        # 如果查出季度数据，去掉
         mark =[]
         for i in range(len(res)):
             if '营业收入' in res[i]:
@@ -66,7 +59,7 @@ class FmUtils(object):
         # 第一列去括号。。
         for i in range(len(w)):
             tmp = [self._format_cell(x) for x in w[i].split()]
-            w[i] = ' '.join(tmp)
+            w[i] = ''.join(tmp)
 
         res =[]
         pool = [ '归属','扣除非' ]
@@ -156,6 +149,8 @@ class FmUtils(object):
         # mode 4, mode0+mode3(默认忽略前处理step3)
         # mode 5, 忽略前处理step3
 
+        self.mode = mode
+
         if not(pages):
             pages = "all"
         df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
@@ -179,19 +174,20 @@ class FmUtils(object):
             self._preprocess_df_step3(df)
         self._buf = df.copy()
         # 清理数据
-        res = self._clean_df(df,mode)
+        res = self._clean_df(df)
         # 标准化index
         res = self.normalize_table(res)
+        self._buf2 = res.copy()
 
-        if mode == 3 or mode==4:
-            new_out = []
-            for i in res:
-                if len(i.split()) == 5:
-                    i = i.split()
-                    new_out.append(' '.join([i[0],i[1],i[3]]))
-        else:
-            new_out = res
-        self._buf2 = new_out.copy()
+        #  if mode == 3 or mode==4:
+            #  new_out = []
+            #  for i in res:
+                #  if len(i.split()) == 5:
+                    #  i = i.split()
+                    #  new_out.append(' '.join([i[0],i[1],i[3]]))
+        #  else:
+            #  new_out = res
+        #  self._buf2 = new_out.copy()
 
 
         # 处理子母表
@@ -201,7 +197,7 @@ class FmUtils(object):
         #       如果有m2,结束为m2,否则为下个pos的m0,或者表的最后一行
         #       
         new_output = []
-        pos = self.mark_multi_table(new_out)
+        pos = self.mark_multi_table(res)
         self._buf3 = pos.copy()
         if check_multi and mode!=0 and mode!=4 :
             flag = (len(pos['t1'])==0) or (len(pos['t2'])==0) or (len(pos['t3'])==0)
@@ -219,7 +215,7 @@ class FmUtils(object):
                     if(i<2):
                         end = pos['t'+str(i+1)][0]
                     else:
-                        end = len(new_out)-1
+                        end = len(res)-1
 
                     if len(m) > 1:
                         if (m[1]-m[0])==1:
@@ -229,13 +225,12 @@ class FmUtils(object):
                             end = m[1]
 
                     for j in range(start,end):
-                        new_output.append(new_out[j])
+                        new_output.append(res[j])
                     pos['t'+str(i)] = {'start':start,'end':end}
-            new_out = new_output
             self._buf4 = pos
         #--------------
         # if not check multi table, the value is corrupted
-        e,tmp = self._formatted_list_to_ordered_dic(new_out)
+        e,tmp = self._formatted_list_to_ordered_dic(new_output)
 
         return(e)
 
@@ -243,43 +238,33 @@ class FmUtils(object):
 
 
 
-    def process_line(self,res, mode = 1):
+    def process_line(self,res):
         # 处理单行
         # 1. 对每行用_format_index进行预处理
-        # 2.
-        #    a. 去掉长度小于2的（一般是注释）(不然‘库存’‘商誉’)
-        #    c. 查看每个comp是否是合理的数字，生成newline,flagline
-        # 3. a. 如果数字出现少于2个，就去掉（需要针对two col进行修改）
-        #    b. 如果最后一个comp是文字，就去掉
+        #    a. 少于两个数字，删除当前行
+        #    b. 如果最后一个comp是文字，就去掉当前行
         #    c. 如果前两个都是文字，去掉第一个
-        x = [self._format_cell(i) for i in res.split()]
-
-        blist = [str(i) for i in range(10,100)]
-
-        newline=[]
-        flagline=[]
-        for comp in x:
-            if len(comp)<2 or (comp in blist): #从3变为2，'存货'被删掉了 增加对10-99数字判断
-                # some comment is like 1,2,3...11,12
-                continue
-            flagline.append(self._is_str_valid(comp))
-            newline.append(comp)
+        newline = [self._format_cell(i) for i in res.split()]
+        flagline=[self._is_str_valid(comp) for i in newline]
 
         if flagline.count(True) < 2:
-            return('')
+            ans = ('')
         else:
+            # abandon the line start with a valid number
             if flagline[0] == True:
-                # abandon the line start with a valid number
                 newline=['']
+            #如果最后一个不是数字，删除
             elif flagline[-1] == False:
-                #如果最后一个不是数字，删除
                 newline.pop();
-            elif (len(flagline[:-2]) > 1 and mode == 2):
-                # 去掉第一个，和最后两个数字中间的
-                for kk in range(len(flagline[:-2])-1):
-                    # newline在删element过程中会变化，所以用len(flagline)
-                    newline.remove(newline[len(flag[:-2])-1-kk])
-            return(' '.join(newline))
+            #  elif (len(flagline[:-2]) > 1 and mode == 2):
+                #  # 去掉第一个，和最后两个数字中间的
+                #  for kk in range(len(flagline[:-2])-1):
+                    #  # newline在删element过程中会变化，所以用len(flagline)
+                    #  newline.remove(newline[len(flag[:-2])-1-kk])
+            ans = ' '.join(newline)
+        if (self.mode == 3 or self.mode == 4) and len(newline)==5:
+            ans = ' '.join([newline[0],newline[1],newline[3]])
+        return ans
 
 
     def normalize_table(self,output):
@@ -316,21 +301,11 @@ class FmUtils(object):
                 pos['t3'].append(i)
         return(pos)
 
-    #  def _is_str_valid_v2(self,s):
-        #  '''check if this string is a valid number'''
-        #  # 对于括号中的数字
-        #  if not(isinstance(s,str)):
-            #  s = str(s)
-        #  ss = s.replace(',','')
-        #  ss = ss.replace('.','')
-        #  ss = ss.replace('-','')
-        #  ss = ss.replace('%','')
-        #  return(bytes.isalnum(ss.encode()))
 
     def _is_str_valid(self,s):
         if not(isinstance(s,str)):
             s = str(s)
-        # 去括号
+        # 去字符串开头结尾的括号
         s =  re.sub(r'^\(([0-9,-.]+)\)$', r'\1', s)
         # 去百分号
         s = s.replace('%','')
@@ -342,8 +317,11 @@ class FmUtils(object):
     # 清理表格
     #    a.合并dataframe
     #    b.处理单行
-    def _clean_df(self,df,mode):
+    def _clean_df(self,df):
         #dataframe 变成 list
+        #  for i in range(ww.shape[0]):
+            #  out = ' '.join(list(ww.loc[i,:]))
+            #  res.append(out)
         for i in range(df.shape[1]):
             if i == 0:
                 tmp = df.loc[:,i]
@@ -352,7 +330,7 @@ class FmUtils(object):
         res = list(tmp)
         # 清理每行
         res = [ x for x in res if len(x.split())>2] 
-        res = [ self.process_line(x,mode = mode) for x in res ]
+        res = [ self.process_line(x) for x in res ]
         res = [ x for x in res if len(x.split()) > 2 ]
 
         return(res)
@@ -373,7 +351,7 @@ class FmUtils(object):
                 count_d[tmp[0]] +=1
         flag = [x > 2 for x in count_d.values()]
         if any(flag):
-            #  raise Exception("Too many duplicates")
+            raise Exception("Too many duplicates")
             pass
 
         return (e,count_d)
@@ -398,82 +376,28 @@ class FmUtils(object):
             s = re.sub(r'\(.+\)','',s)
             s = re.sub(r'\).*','',s)
             s = re.sub(r'\(.*','',s)
+            # 去掉中文括号及其中内容
             s = re.sub(r'（.+）','',s)
             s = re.sub(r'）.*','',s)
             s = re.sub(r'（.*','',s)
+            # 类似 七75
             s = re.sub(r'[二三四五六七八九十][^\u4E00-\u9FA5]+','',s)
             clist = ['其中:','减:','加:']
             for i in clist:
                 s = s.replace(i,'')
+        else:
+            #如果是1位或者2位数字,删除
+            s = re.sub(r'^\d\d?$','',s)
         if '注' in s:
             s = ''
         if '增加' in s:
             s = ''
+        #    a. 去掉长度小于2的（一般是注释）(不然‘库存’‘商誉’)
+        if len(s)<2:
+            s = ''
 
         return(s)
 
-
-    #  def _format_index(self,s):
-        #  assert(len(s.split())<2)
-        #  #normalize 单个string格式
-        #  # 去掉
-        #  # 1. 带有alist的
-        #  # 2. 对于非数字包含blist
-        #  # 3. 带有括号和括号内的
-        #  s =  re.sub(r'\(([0-9,.]+)\)', r'\1', s)
-        #  if '注' in s:
-        #  #  if '附注' in s:
-            #  return ''
-
-        #  if '增加' in s:
-        #  #  if '附注' in s:
-            #  return ''
-
-        #  #r'[一二三四五六七八九十]+[、.]'
-
-        #  flag = True
-
-        #  alist =['一、','二、','三、','四、','五、','六、','七、','八、','九、']
-        #  for i in alist:
-            #  if i in s:
-                #  s = s.split(i)[1]
-        #  alist =['一.','二.','三.','四.','五.','六.','七.']
-        #  for i in alist:
-            #  if i in s:
-                #  s = s.split(i)[1]
-
-        #  if(self._is_str_valid(s)):
-            #  blist=[]
-            #  if len(s)<3:
-                #  s=''
-                #  flag = False
-        #  else:
-            #  s = s.replace('-','')
-            #  blist = [str(i)+'.' for i in range(0,20)]
-            #  #remove 1. , 2. ,...........
-            #  #如果非数字string长度小于2，删除
-            #  if len(s)<2:
-                #  s=''
-                #  flag = False
-        #  if flag:
-            #  clist = ['其中:','减:','加:']
-            #  for i in blist+clist:
-                #  s = s.replace(i,'')
-            #  tmp = s.find('(')
-            #  if not(tmp==-1):
-                #  if tmp<3:
-                    #  tmp2 = s.split(')')
-                    #  if len(tmp2)>1:
-                        #  s = tmp2[1]
-                #  tmp2 = s.split('(')
-                #  s = tmp2[0]
-            #  tmp = s.find(')')
-            #  if tmp!=-1:
-                #  if len(s)<3:
-                    #  s=''
-            #  #  if '注' in s:
-                #  #  ss =  ''
-        #  return(s)
 
     def _comma_sep_string_to_num(self,s):
         ##将逗号分隔的数字转成数字
@@ -527,40 +451,6 @@ class FmUtils(object):
             acc+=1
 
 
-    #  def get_ratios(self,e):
-
-        #  result = OrderedDict()
-        #  prec = 2
-        #  #  print(e)
-        #  result['营收增幅'] = e['营业收入'][0]/e['营业收入'][1] -1
-        #  result['毛利率'] = 1 - e['营业成本'][0]/e['营业收入'][0]
-        #  result['三项费用率'] = (e['管理费用'][0]+e['销售费用'][0]+e['财务费用'][0])/e['营业收入'][0]
-        #  result['销售费用率'] = e['销售费用'][0]/e['营业收入'][0]
-        #  result['管理费用率'] = e['管理费用'][0]/e['营业收入'][0]
-        #  result['财务费用率'] = e['财务费用'][0]/e['营业收入'][0]
-        #  result['扣非净利润增幅'] = e['营业利润'][0]/e['营业利润'][1] - 1
-        #  result['资产负债率'] = e['负债合计'][0]/e['资产总计'][0]
-        #  result['应收账款占收入'] = (e['应收账款'][0]+e['应收票据'][0])/e['营业收入'][0]
-        #  result['净营运资本'] = (e['流动资产合计'][0]-e['流动负债合计'][0])/10**8
-        #  result['固定资产占总资产比重'] = (e['固定资产'][0])/e['资产总计'][0]
-        #  result['现金资产占总资产比重'] = (e['货币资金'][0])/e['资产总计'][0]
-        #  result['在建工程占固定资产比重'] = (e['在建工程'][0])/e['固定资产'][0]
-        #  result['净资产收益率'] = e['净利润'][0]/((e['所有者权益'][0]+e['所有者权益'][1])/2)
-        #  result['净利润率'] =  e['净利润'][0]/e['营业收入'][0]
-        #  result['总周转率'] =  e['营业收入'][0]/((e['资产总计'][0]+e['资产总计'][1])/2)
-        #  result['财务杠杆'] =  e['资产总计'][0]/(e['资产总计'][0] -  e['负债合计'][0])
-        #  result['总资产增长率'] = e['资产总计'][0]/e['资产总计'][1]
-        #  result['经营性现金率/净利润'] =e['经营活动产生的现金流量净额'][0]/ e['净利润'][0]
-
-        #  for i in result.keys():
-            #  result[i] = round(result[i]*100,prec)
-        #  result['净营运资本'] = round(result['净营运资本']/100,prec)
-        #  result['财务杠杆'] = round(result['财务杠杆']/100,prec)
-        #  result['总周转率'] = round(result['总周转率']/100,prec)
-
-        #  return(result,e)
-
-
     def get_ratios(self,this,last):
         # ----------------------------------------------
         result = OrderedDict()
@@ -604,86 +494,12 @@ class FmUtils(object):
 
         return(result)
 
-    #  def read_and_clean_v2(self, path, pages="",check_multi = True):
-        #  # 读取pdf表格，并清理
-        #  #  parallel_tab_flag = False
-        #  #  pdfFileObj = open(path,'rb')
-        #  #  pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
-        #  if not(pages):
-            #  pages = "all"
-        #  df = read_pdf(path, pages = pages,silent=True, multiple_tables=True, pandas_option={'header':None})
-        #  self._buf = df
-        #  output=[]
 
-        #  # read_pdf 返回list,对应每个表格
-        #  # 1. 如果col数目大于5，认为表格是双排
-        #  # 2. 对于 n/a 填充空格
-        #  # 3. 合并每行的内容
-        #  # 4. 清理数据
-        #  #    a. 如果每行 少于两个 comp 则丢弃
-        #  #       对于双排表格进行处理
-        #  #    b. process_line 清理
-        #  for k in range(len(df)):
-            #  ncol = df[k].shape[1]
-            #  if  ncol > 5:
-                #  parallel_tab_flag = True
-            #  df[k] = df[k].fillna(' ')
-            #  #dataframe 变成 list
-            #  for i in range(ncol):
-                #  if i == 0:
-                    #  tmp = df[k].loc[:,i]
-                #  else:
-                    #  tmp = tmp+' '+df[k].loc[:,i]
-            #  res = list(tmp)
-
-            #  res = [ x for x in res if len(x.split())>2]
-            #  res = [ self.process_line(x) for x in res ]
-            #  res = [ x for x in res if len(x) > 2 ]
-            #  output.append(res)
-
-        #  # combine list in result
-        #  new_out = []
-        #  for i in output:
-            #  new_out+=i
-        #  new_out = self.normalize_table(new_out)
-        #  self._buf2 = new_out
-
-        #  new_output = []
-        #  pos = self.mark_multi_table(new_out)
-        #  if check_multi:
-            #  flag = (len(pos['t1'])>1) or (len(pos['t2'])>1) or (len(pos['t3'])>1)
-            #  if flag:
-                #  new_output=[]
-                #  for i in range(1,4):
-                    #  m = pos['t'+str(i)]
-                    #  if len(m) > 1:
-                        #  start = m[0]
-                        #  if (m[1]-m[0])==1:
-                            #  if(len(m)>2):
-                                #  end = m[2]
-                            #  else:
-                                #  if(i<2):
-                                    #  end = pos['t'+str(i+1)][0]
-                                #  else:
-                                    #  end = len(new_out)-1
-                        #  else:
-                            #  end = m[1]
-                        #  for j in range(start,end):
-                            #  new_output.append(new_out[j])
-                    #  else:
-                        #  # 处理有的不带第二张表情况
-                        #  # deal with not all have child table
-                        #  pass
-            #  new_out = new_output
-        #  self._buf3 = new_out
-        #  #--------------
-        #  # if not check multi table, the value is corrupted
-        #  # update 不记录第二次出现数据
-        #  e,tmp = self._formatted_list_to_ordered_dic(new_out)
-
-        #  return(e)
     def save_to_excel(self,path,d):
         # '#,##0.00'
+        # '#,##0.00$'
+        # '$#,##0.00'
+
         wb = Workbook()
         ws = wb.active
         for i in d:
@@ -712,4 +528,4 @@ class FmUtils(object):
             elif tmp==-99:
                 print(i)
 
-        db_session.commit()
+        d_session.commit()
