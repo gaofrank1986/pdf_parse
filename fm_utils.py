@@ -23,36 +23,13 @@ class FmUtils(object):
 
         ww = pd.concat(df[:])
         ww.index = range(0,ww.shape[0])
-        self._buf = ww
-
-        for d in range(0,ww.shape[0]):
-            f1 = ww.loc[d,:].isnull()
-            skip_flag = False
-            if not(f1[0]) and self._is_valid_line(ww.loc[d,:]):
-            # first cell is not nan
-                if isinstance(ww.loc[d,0],str):
-                    skip_flag = self._line_to_stop(ww.iloc[d:,0])
-                for kk in range(1,4):
-                    if d == ww.shape[0] - kk or (d+kk) > ww.shape[0] or skip_flag:
-                        pass
-                    else:
-                        f1 = ww.loc[d+kk,:].isnull()
-                        # 如果 [0] is nan 同时 [1] isnot nana
-                        # [0] not nan, 非nan最多2个
-                        if (f1[0] and not(f1[1])) or (not(f1[0]) and  ww.shape[1] - sum(f1)<3):
-                            ww.loc[d,:] = ww.loc[d,:].fillna(' ')
-                            if(self._is_valid_line(ww.loc[d+kk,:])):
-                                ww.loc[d,:] += ww.loc[d+kk,:].fillna('')
-                            skip_flag = self._line_to_stop(ww.iloc[d+kk:,0])
         ww = ww.fillna(' ')
-        self._buf2 = ww
+        self._buf = ww.copy()
+
+        self._smr_preprocess_df(ww)
+        self._buf2 = ww.copy()
 
 
-        # 保留前三列
-        for d in range(3,ww.shape[1]):
-            ww = ww.drop(d,axis = 1) 
-        ww.index = range(0,ww.shape[0])
-        # dataframe 转换成 list
         res = []
         for i in range(ww.shape[0]):
             out = ' '.join(list(ww.loc[i,:]))
@@ -61,8 +38,7 @@ class FmUtils(object):
         self._buf3 = res
         res = [ self.process_line(x) for x in res ]
         res = [ x for x in res if len(x) > 2 ]
-        # 结果转存在有序dict里面
-        #  e,tmp = self._formatted_list_to_ordered_dic(res)
+
         mark =[]
         for i in range(len(res)):
             if '营业收入' in res[i]:
@@ -80,93 +56,48 @@ class FmUtils(object):
 
         return(ans)
 
-    #  def combine_below(self,ww):
+    def _smr_preprocess_df(self,df):
+        # 第一列内容
+        w = list(df.iloc[:,0])
 
-        #  for d in range(0,ww.shape[0]):
-            #  print(d)
-            #  f1 = ww.loc[d,:].isnull()
-            #  skip_flag = False
-            #  if not(f1[0]) and self._is_valid_line(ww.loc[d,:]):
-                #  #尝试合并此行之下的3行
-                #  skip_flag = self._line_to_stop(ww.iloc[d:,0],ww.loc[d,:])
-                #  if skip_flag == -1:
-                    #  ww.loc[d,:] = ww.loc[d,:].fillna('')
-                    #  ww.loc[d,:] += ww.loc[d+1,:].fillna('')
-                    #  skip_flag = 1
-
-                #  for kk in range(1,4):
-                    #  # 如果kk超出表格范围，或者当前行是stop line
-                    #  # 表格有shape[0]行，行号为0到shape[0] - 1
-                    #  # 所以d+kk = shape[0] 时已经超出范围
-                    #  if (d+kk) >= ww.shape[0] or skip_flag:
-                        #  pass
-                    #  else:
-                        #  # 合并条件:
-                        #  # 如果 [0] is nan 同时 [1] isnot nana
-                        #  # [0] not nan, 非nan最多2个
-                        #  f1 = ww.loc[d+kk,:].isnull()
-                        #  count_nan = sum([not(x) for x in f1])
-                        #  if (f1[0] and not(f1[1])) or (not(f1[0]) and  count_nan<3):
-                            #  ww.loc[d,:] = ww.loc[d,:].fillna(' ')
-                            #  if(self._is_valid_line(ww.loc[d+kk,:])):
-                                #  ww.loc[d,:] += ww.loc[d+kk,:].fillna('')
-                            #  skip_flag = self._line_to_stop(ww.iloc[d+kk:,0],ww.loc[d+kk,:])
-        #  return(ww.copy())
-
-    # 判定当前行是否为 终止行
-    # s： one column/line dataframe （表格当前行开始的首列内容 
-    #                                 first column in table starting from current cell)
-    # 1 stop ,0 不stop ,-1 stop 但只向下合并1行
-
-
-    def _line_to_stop(self,s,s1=[]):
-        # 如果当前行是最后一行( len(s) = 1 )，停止
-        # 如果当前字符最后一个字是....,而且下一个非nan单元以'('开始, 就不是结束，否则是结束
-        # 如果当前最后一个字是。。。，但此行horizontal line其他都是nan,则继续合并1行
-        flagline = list(s.isnull())
-        if(len(s1)!=0):
-            count_hori_nan = sum(s1.isnull())
-        else:
-            count_hori_nan = 9
-        s = list(s)
-        flag = 0
-        if(len(s) == 1):
-            flag = 1
-
-        if not(flag) and not(flagline[0]):
-            if s[0][-1] in ['入',')','额','润']:
-            # find first valid string
-                for i in range(1,len(s)):
-                    if(not(flagline[i])):
+        for i in range(len(w)):
+            if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
+                for kk in range(1,3):
+                    # 超出表格·
+                    if(i+kk>len(w)-1):
                         break
-                if(i == len(s)-1):
-                    pass
-                elif(s[i][0] == '('):
-                    pass
-                else:
-                    flag = 1
-                if (len(s1) - count_hori_nan == 1):
-                    flag = -1
-        return flag
+                    df.loc[i+kk,0] = w[i+kk].replace(' ','')
+                    df.loc[i,:] += df.loc[i+kk,:]
+                    for j in range(len(v)):
+                        df.iloc[i+kk,j] = ''
+                    if w[i+kk].endswith(')') :
+                        break
+        
+        #-------------
+        for i in range(len(w)):
+            tmp = [self._format_cell(x) for x in w[i].split()]
+            w[i] = ' '.join(tmp)
 
-
-    # 判断当前行是否是可以作为向下合并的line
-    # s 为当前行的 dataframe
-    # 如果包含有年, 数字1990到2030, 季度 则判定不合格
-    def _is_valid_line(self,s):
-        s = ' '.join(list(s.fillna(' ')))
-        ans = True
-        if "年" in s:
-            ans = False
-        for i in s.split():
-            if re.sub('[^0-9]','', i) in range(1990,2030):
-                ans = False
-                break
-        for i in s.split():
-            if '季度' in i:
-                ans = False
-                break
-        return ans
+        # 第一行内容
+        v = list(df.iloc[0,:])
+        res =[]
+        pool = [ '归属','扣除非' ]
+        for i in range(len(w)):
+            tmp = [x in w[i] for x in pool]
+            if any(tmp):
+                res.append(i)
+        for i in res:
+            for kk in range(1,3):
+                if(i+kk>len(w)-1):
+                    break
+                if w[i].endswith('润') or w[i].endswith('率') or w[i].endswith('产') or w[i].endswith('益'):
+                    break
+                df.loc[i+kk,0] = w[i+kk].replace(' ','')
+                df.loc[i,:] += df.loc[i+kk,:]
+                # 加入下一行，结束判定可有上一个if完成
+                w[i] += w[i+kk]
+                for j in range(len(v)):
+                    df.iloc[i+kk,j] = ''
 
     #------------------------------------------------------------ 
     #--------------------- read and clean part------------------
@@ -182,7 +113,6 @@ class FmUtils(object):
             #  if '购建固定资产' in w[i] or '处置固定资产' in w[i] or '销售商品、提' in w[i]:
             if any(tmp):
                 res.append(i)
-        print(res)
         for i in res:
             for kk in range(1,3):
                 if(i+kk>len(w)-1):
@@ -191,7 +121,9 @@ class FmUtils(object):
                     break
                 df.loc[i+kk,0] = w[i+kk].replace(' ','')
                 df.loc[i,:] += df.loc[i+kk,:]
-                if w[i+kk].endswith('金') or w[i].endswith('净额'):
+                #  for j in range(len(v)):
+                    #  df.iloc[i+kk,j] = ''
+                if w[i+kk].endswith('金') or w[i+kk].endswith('净额'):
                     break
 
         for i in range(len(w)):
