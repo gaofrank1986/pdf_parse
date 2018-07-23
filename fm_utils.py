@@ -174,9 +174,13 @@ class FmUtils(object):
 
     def _preprocess_df(self,df):
         w = list(df.iloc[:,0])
+        v = list(df.iloc[0,:])
         res =[]
+        pool = [ '购建固定资产', '处置固定资产','销售商品、提','经营活动产生']
         for i in range(len(w)):
-            if '购建固定资产' in w[i] or '处置固定资产' in w[i]:
+            tmp = [x in w[i] for x in pool]
+            #  if '购建固定资产' in w[i] or '处置固定资产' in w[i] or '销售商品、提' in w[i]:
+            if any(tmp):
                 res.append(i)
         print(res)
         for i in res:
@@ -190,16 +194,6 @@ class FmUtils(object):
                 if w[i+kk].endswith('金') or w[i].endswith('净额'):
                     break
 
-    def _preprocess_df_v2(self,df):
-        w = list(df.iloc[:,0])
-        v = list(df.iloc[0,:])
-        for i in range(len(w)):
-            flag = [self._is_str_valid(df.iloc[i,-2]),self._is_str_valid(df.iloc[i,-1])]
-            if (flag[0] and df.iloc[i,-1] ==' '):
-                df.iloc[i,-1] ='00000.00'
-            elif(flag[1] and df.iloc[i,-2] == ' '):
-                df.iloc[i,-2] ='00000.00'
-
         for i in range(len(w)):
             if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
                 for kk in range(1,3):
@@ -212,6 +206,17 @@ class FmUtils(object):
                         df.iloc[i+kk,j] = ''
                     if w[i+kk].endswith(')') :
                         break
+
+    def _preprocess_df_v2(self,df):
+        w = list(df.iloc[:,0])
+        v = list(df.iloc[0,:])
+        for i in range(len(w)):
+            flag = [self._is_str_valid(df.iloc[i,-2]),self._is_str_valid(df.iloc[i,-1])]
+            if (flag[0] and df.iloc[i,-1] ==' '):
+                df.iloc[i,-1] ='00000.00'
+            elif(flag[1] and df.iloc[i,-2] == ' '):
+                df.iloc[i,-2] ='00000.00'
+
         #括号跨越
         #数字/空白
         #空白/数字
@@ -222,6 +227,8 @@ class FmUtils(object):
         # mode 1 ,正常
         # mode 2 , process_line 去除 [0] 和 最后两个数字之间的部分
         # mode 3 ,处理 2017数据合并,母公司，2016数据合并,数据母公司
+        # mode 4, mode0+mode3
+        # mode 5, 忽略前处理2
 
         if not(pages):
             pages = "all"
@@ -230,7 +237,7 @@ class FmUtils(object):
         for k in range(len(df)):
             ncol = df[k].shape[1]
             # 如果在前2/3的部分发现大于6列则判定双列表
-            if  ncol > 6 and k < round(len(df)*2/3) and mode!=3 :
+            if  ncol > 6 and k < round(len(df)*2/3) and mode!=3  and mode!=4:
                 parallel_tab_flag = True
                 #  raise Exception(path,ncol,"parallel table")
 
@@ -238,7 +245,8 @@ class FmUtils(object):
         #  df  =pd.concat(df[:]).fillna('blank')
         df.index = range(0,df.shape[0])
         self._oldest = df.copy()
-        self._preprocess_df_v2(df)
+        if mode <3:
+            self._preprocess_df_v2(df)
         self._preprocess_df(df)
 
         self._buf = df.copy()
@@ -247,7 +255,7 @@ class FmUtils(object):
         # 标准化index
         res = self.normalize_table(res)
 
-        if mode == 3:
+        if mode == 3 or mode==4:
             new_out = []
             for i in res:
                 if len(i.split()) == 5:
@@ -267,7 +275,7 @@ class FmUtils(object):
         new_output = []
         pos = self.mark_multi_table(new_out)
         self._buf3 = pos.copy()
-        if check_multi and mode!=0:
+        if check_multi and mode!=0 and mode!=4 :
             flag = (len(pos['t1'])==0) or (len(pos['t2'])==0) or (len(pos['t3'])==0)
             if flag:
                 raise Exception("table missing")
@@ -398,7 +406,7 @@ class FmUtils(object):
         s =  re.sub(r'^\(([0-9,-.]+)\)$', r'\1', s)
         # 去百分号
         s = s.replace('%','')
-        if(re.match(r'^[-]?\d[0-9,]*[^,][.]?\d*$',s)):
+        if(re.match(r'^[-]?[0-9,]*\d[.]?\d*$',s)):
             return True
         else:
             return False
@@ -448,6 +456,8 @@ class FmUtils(object):
         s = re.sub(r'^\(([0-9-,.]+)\)$', r'\1', s)
         # 去掉汉字数字+[.] or [、]
         s = re.sub(r'[一二三四五六七八九十]+[、.]','',s)
+        # 去掉 十一，十二
+        s = re.sub(r'[二三四五六七八九十]{2}','',s)
         # [\u4E00-\u9FA5] 去掉类似(一) (二)
         s = re.sub(r'\([\u4E00-\u9FA5]{1,2}[、.]?\)','',s)
         if not(self._is_str_valid(s)):
@@ -460,6 +470,10 @@ class FmUtils(object):
             s = re.sub(r'\(.+\)','',s)
             s = re.sub(r'\).*','',s)
             s = re.sub(r'\(.*','',s)
+            s = re.sub(r'（.+）','',s)
+            s = re.sub(r'）.*','',s)
+            s = re.sub(r'（.*','',s)
+            s = re.sub(r'[二三四五六七八九十][^\u4E00-\u9FA5]+','',s)
             clist = ['其中:','减:','加:']
             for i in clist:
                 s = s.replace(i,'')

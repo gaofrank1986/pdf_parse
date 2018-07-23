@@ -5,6 +5,8 @@ from collections import OrderedDict
 from progressbar import ProgressBar,Percentage,Bar,Timer,ETA
 import re
 from random import randint
+from tabula import read_pdf
+import pandas as pd
 
 class PDFTarget(object):
 
@@ -14,6 +16,7 @@ class PDFTarget(object):
         self.buf = []
         self.year= None
         self.__gap = 1
+        self.df = None
 
         doc = pdf.Document(path.encode())
         tmp = 0
@@ -43,6 +46,15 @@ class PDFTarget(object):
                 break
         if self.year == '':
             self.year = randint(1,1000)
+        tmp = self._search_string("公司信息")
+        if len(tmp)!=0 :
+            #  df = read_pdf(path, pages = str(tmp[0]+1),silent=True, \
+            df = read_pdf(self.path, pages = str(tmp[0]+1)+'-'+str(tmp[0]+2),silent=True, \
+                multiple_tables=True, pandas_option={'header':None})
+            df = pd.concat(df[:])
+            df.index = range(df.shape[0])
+            self.df = df.fillna(' ')
+
 
 
 
@@ -54,6 +66,26 @@ class PDFTarget(object):
                 res.append(i)
         return(res)
 
+    def _check_same_line(self,s):
+        s = s.split()
+        pool1 = ['证券简称','公司简称','股票简称']
+        pool2 = ['公司代码','证券代码','股票代码']
+
+        tmp = [ x in s for x in pool1 ]
+        flag1 = any(tmp)
+        if(flag1):
+            pos1 = s.index(pool1[tmp.index(True)]) 
+        tmp = [ x in s for x in pool2 ]
+        flag2 = any(tmp)
+        if(flag2):
+            pos2 = s.index(pool2[tmp.index(True)]) 
+        ans = False
+        if flag1 and flag2:
+            ans = (abs(pos1-pos2) == 1)
+        return ans 
+
+
+
     def _search_company_info(self,mode):
         if(mode == 2):
             pool = ['证券简称','公司简称','股票简称']
@@ -62,40 +94,67 @@ class PDFTarget(object):
         else:
             raise Exception("wrong mode")
 
+
         found = False
         ans = ''
         for i in self.buf[0]:
-            #  for j in i.split():
             for aitem in pool:
                 if aitem in i:
-                    ans = i.split('：')[1]
-                    found = True
-                    break
+                    print(i)
+                    tmp = i.split('：')[1]
+                    if len(tmp) > 1:
+                        ans = tmp
+                        found = True
+                        break
             if found:
                 break
-        if not(found):
-            tmp = self._search_string("公司信息")
-            tmp = self.buf[tmp[0]] + self.buf[tmp[0]+1]
-            for i in range(len(tmp)):
+        if not(found) and isinstance(self.df,pd.DataFrame):
+            for i in range(self.df.shape[0]):
                 for aitem in pool:
-                    if aitem == tmp[i]:
-                        if(mode == 1):
-                            #寻找下一个纯数字string
-                            counter = i
-                            while(counter < len(tmp)-1):
-                                if(tmp[counter+1].isdigit()):
-                                     ans = tmp[counter+1]
-                                     self.__gap = counter+1-i
-                                     found = True
-                                     break
-                                counter+=1
+                    tmp =  ' '.join(list(self.df.iloc[i,:]))
+                    if aitem in tmp:
+                        if(not self._check_same_line(tmp)):
+                            print(tmp)
+                            tmp = tmp.split()
+                            try:
+                                ans = tmp[tmp.index(aitem)+1]
+                                found = True
+                                break
+                            except ValueError:
+                                print("Cannot locate ",aitem)
+                            except IndexError:
+                                raise Exception(tmp)
                         else:
-                            found = True
-                            ans = tmp[i+self.__gap]
-                    if(found):
-                        break
-                if(found):
+                            tmp2 =  ' '.join(list(self.df.iloc[i+1,:]))
+                            tmp2 = tmp2.replace('A 股','A')
+                            print(tmp2)
+                            tmp = tmp.split()
+                            tmp2 = tmp2.split()
+                            try:
+                                ans = tmp2[tmp.index(aitem)]
+                                found = True
+                                break
+                            except:
+                                pass
+                if found:
                     break
+        if not(found):
+            tmp = self._search_string("基本情况简介")
+            tmp = self.buf[tmp[0]] + self.buf[tmp[0]+1]
+            found = False
+            ans = ''
+            for i in tmp:
+                for aitem in pool:
+                    if aitem in i:
+                        print(i)
+                        tmp = i.split('：')[1]
+                        if len(tmp) > 1:
+                            ans = tmp
+                            found = True
+                            break
+                if found:
+                    break
+    
         return(ans)
 
     def _search_unit(self):
@@ -144,6 +203,7 @@ class PDFTarget(object):
         ans = self._get_page_range()
         info['summary_pages'] = ans[0]
         info['table_pages'] = ans[1]
+        info['mode'] = 99
         return info
 
 
@@ -159,3 +219,4 @@ class PDFTarget(object):
         #  pages = str(pg[0][0])+'-'+str(pg[0][1])
         #  r = self.util.read_summary(self.path, pages)
         #  return(r)
+        #  info['year'] = self.year
