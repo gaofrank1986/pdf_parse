@@ -25,7 +25,6 @@ class FmUtils(object):
         ww.index = range(0,ww.shape[0])
         self._buf = ww.copy()
 
-
         self._preprocess_df_step1(ww)
         self._smr_preprocess_df(ww)
         self._buf2 = ww.copy()
@@ -181,17 +180,6 @@ class FmUtils(object):
         res = self.normalize_table(res)
         self._buf2 = res.copy()
 
-        #  if mode == 3 or mode==4:
-            #  new_out = []
-            #  for i in res:
-                #  if len(i.split()) == 5:
-                    #  i = i.split()
-                    #  new_out.append(' '.join([i[0],i[1],i[3]]))
-        #  else:
-            #  new_out = res
-        #  self._buf2 = new_out.copy()
-
-
         # 处理子母表
         # a. 如果有重复
         #       起始为m[0]
@@ -234,13 +222,9 @@ class FmUtils(object):
         if not(len(new_output)==0):
             res = new_output
         #--------------
-        # if not check multi table, the value is corrupted
         e,tmp = self._formatted_list_to_ordered_dic(res)
 
         return(e)
-
-
-
 
 
     def process_line(self,res):
@@ -314,7 +298,7 @@ class FmUtils(object):
         s =  re.sub(r'^\(([0-9,-.]+)\)$', r'\1', s)
         # 去百分号
         s = s.replace('%','')
-        if(re.match(r'^[-]?[0-9,]*\d[.]?\d*$',s)):
+        if re.match(r'^[-]?[0-9,]*\d$',s) or re.match(r'^[-]?[0-9,]*\d[.]\d+$',s) :
             return True
         else:
             return False
@@ -363,34 +347,34 @@ class FmUtils(object):
 
     def _format_cell(self,s):
         assert(len(s.split())<2)
-        # 去除数字周围的括号
-        s = re.sub(r'^\(([0-9-,.]+)\)$', r'\1', s)
-        # 去掉汉字数字+[.] or [、]
-        s = re.sub(r'[一二三四五六七八九十]+[、.]','',s)
-        # 去掉 十一，十二
-        s = re.sub(r'[二三四五六七八九十]{2}','',s)
-        # [\u4E00-\u9FA5] 去掉类似(一) (二)
-        s = re.sub(r'\([\u4E00-\u9FA5]{1,2}[、.]?\)','',s)
         if not(self._is_str_valid(s)):
-            # 如果不是数字项,去掉1.,2.,...........
-            s = re.sub(r'[0-9]{1,2}[.]*','',s)
+            # 去掉汉字数字+[.] or [、]
+            s = re.sub(r'[一二三四五六七八九十]+[、.]','',s)
+            # 去掉 十一，十二
+            s = re.sub(r'[二三四五六七八九十]{2}','',s)
+            # 类似 七75
+            s = re.sub(r'[二三四五六七八九十][^\u4E00-\u9FA5]+','',s)
+            # [\u4E00-\u9FA5] 去掉类似(一) (二)
+            #  s = re.sub(r'\([\u4E00-\u9FA5]{1,2}[、.]?\)','',s)
+            # 如果不是数字项,去掉数字及.
+            s = re.sub(r'[0-9.]','',s)
             #  s = s.replace('-','')
             if s == '-' or s == '—':
                 s = '00000'
             # 去掉括号及其中内容
-            s = re.sub(r'\(.+\)','',s)
+            s = re.sub(r'\(.*\)','',s)
             s = re.sub(r'\).*','',s)
             s = re.sub(r'\(.*','',s)
             # 去掉中文括号及其中内容
-            s = re.sub(r'（.+）','',s)
+            s = re.sub(r'（.*）','',s)
             s = re.sub(r'）.*','',s)
             s = re.sub(r'（.*','',s)
-            # 类似 七75
-            s = re.sub(r'[二三四五六七八九十][^\u4E00-\u9FA5]+','',s)
             clist = ['其中:','减:','加:']
             for i in clist:
                 s = s.replace(i,'')
         else:
+            # 去除数字周围的括号
+            s = re.sub(r'^\(([0-9-,.]+)\)$', r'\1', s)
             #如果是1位或者2位数字,删除
             s = re.sub(r'^\d\d?$','',s)
         if '注' in s:
@@ -410,10 +394,12 @@ class FmUtils(object):
             raise Exception('no string input cannot be casted into float')
         if not(s):
             return(0)
-        ss = s.replace(',','')
-        ss = ss.replace('%','')
-        logging.debug(ss)
-        logging.debug(ss[0])
+        if not(self._is_str_valid(s)):
+            raise Exception(s,"not valid number string")
+        #  ss = s.replace(',','')
+        #  ss = ss.replace('%','')
+        ss = re.sub(r'[,%]','',s)
+
         sign = 1
         if (ss[0] == '-')and(ss.count('-')==1):
             sign = -1
