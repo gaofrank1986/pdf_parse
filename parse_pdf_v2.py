@@ -201,8 +201,15 @@ class PDFTarget(object):
         info['stock_name'] = self._search_company_info(mode=2)
         info['year'] = self.year
         ans = self._get_page_range()
-        info['summary_pages'] = ans[0]
-        info['table_pages'] = ans[1]
+        sp=''
+        tp=''
+        if (ans[0]):
+            sp = str(ans[0][0])+'-'+str(ans[0][1])
+        if (ans[1]):
+            tp = str(ans[1][0])+'-'+str(ans[1][1])
+
+        info['summary_pages'] = sp
+        info['table_pages'] = tp
         info['mode'] = 99
         return info
 

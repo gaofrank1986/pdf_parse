@@ -5,21 +5,20 @@ from pprint import pprint
 import os
 
 a = FmUtils()
-for ii in range(2011,2018):
-    stock_name = '万华化学'
+for ii in range(2012,2018):
+    stock_name = '大华股份'
     mode = 1
     # -------------init -------------------
     b = a.load_from_json("./"+stock_name+"/info.json")
     key = stock_name+str(ii)+'.pdf'
     v = b[key]
-    c = v['table_pages']
     if v['mode']!= 99:
         mode = v['mode']
-    dirc = './' + stock_name + '/'
-    pprint(dirc+key)
-    #  try:
-    pages = str(c[0])+'-'+str(c[1])
-    d = a.read_and_clean(dirc+key,pages,mode = mode)
+    path = os.path.join('./',stock_name,key)
+    #  dirc = './' + stock_name + '/'
+    #  pprint(dirc+key)
+    print(path)
+    d = a.read_and_clean(path,v['table_pages'],mode = mode)
     pprint(d)
 
     # ------------ init json ------------
