@@ -115,6 +115,7 @@ class FmUtils(object):
     def _preprocess_df_step1(self,df):
         #括号跨越
         w = list(df.iloc[:,0])
+        v = list(df.iloc[0,:])
         for i in range(len(w)):
             if (df.iloc[i,0].count('(') == 1) and (df.iloc[i,0].count(')') == 0):
                 for kk in range(1,3):
@@ -171,7 +172,8 @@ class FmUtils(object):
         self._preprocess_df_step1(df)
         self._preprocess_df_step2(df)
         if mode <3:
-            self._preprocess_df_step3(df)
+            #  self._preprocess_df_step3(df)
+            pass
         self._buf = df.copy()
         # 清理数据
         res = self._clean_df(df)
@@ -228,9 +230,12 @@ class FmUtils(object):
                         new_output.append(res[j])
                     pos['t'+str(i)] = {'start':start,'end':end}
             self._buf4 = pos
+
+        if not(len(new_output)==0):
+            res = new_output
         #--------------
         # if not check multi table, the value is corrupted
-        e,tmp = self._formatted_list_to_ordered_dic(new_output)
+        e,tmp = self._formatted_list_to_ordered_dic(res)
 
         return(e)
 
@@ -245,7 +250,7 @@ class FmUtils(object):
         #    b. 如果最后一个comp是文字，就去掉当前行
         #    c. 如果前两个都是文字，去掉第一个
         newline = [self._format_cell(i) for i in res.split()]
-        flagline=[self._is_str_valid(comp) for i in newline]
+        flagline=[self._is_str_valid(i) for i in newline]
 
         if flagline.count(True) < 2:
             ans = ('')
@@ -367,11 +372,11 @@ class FmUtils(object):
         # [\u4E00-\u9FA5] 去掉类似(一) (二)
         s = re.sub(r'\([\u4E00-\u9FA5]{1,2}[、.]?\)','',s)
         if not(self._is_str_valid(s)):
-            #  s = s.replace('-','')
-            if s=='-':
-                s = '00000'
             # 如果不是数字项,去掉1.,2.,...........
-            s = re.sub(r'[0-9]{1,2}[.]','',s)
+            s = re.sub(r'[0-9]{1,2}[.]*','',s)
+            #  s = s.replace('-','')
+            if s == '-' or s == '—':
+                s = '00000'
             # 去掉括号及其中内容
             s = re.sub(r'\(.+\)','',s)
             s = re.sub(r'\).*','',s)
@@ -508,7 +513,7 @@ class FmUtils(object):
             i.number_format = '#,##0.00'
         for i in ['a','b','c']:
             ws.column_dimensions[i].width = 40
-        ws.save(path)
+        wb.save(path)
 
 
     def save_to_database(self,db_session,db,stock_id,year,d):
@@ -528,4 +533,4 @@ class FmUtils(object):
             elif tmp==-99:
                 print(i)
 
-        d_session.commit()
+        db_session.commit()
